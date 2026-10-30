@@ -1,0 +1,164 @@
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #f1f5f9;
+    color: #0f172a;
+    line-height: 1.5;
+}
+
+.container {
+    width: min(900px, 92%);
+    margin: 0 auto;
+}
+
+.header {
+    background: #0f172a;
+    color: #f8fafc;
+    padding: 28px 0;
+}
+
+.header h1 {
+    margin: 0;
+}
+
+.header p {
+    margin-bottom: 0;
+    color: #cbd5e1;
+}
+
+.card {
+    background: #ffffff;
+    margin: 24px 0;
+    padding: 24px;
+    border-radius: 12px;
+    box-shadow: 0 3px 12px rgba(15, 23, 42, 0.08);
+}
+
+h2 {
+    margin-top: 0;
+}
+
+label {
+    display: block;
+    margin: 14px 0 6px;
+    font-weight: 600;
+}
+
+input,
+textarea {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font: inherit;
+}
+
+input:focus,
+textarea:focus {
+    outline: 2px solid #64748b;
+    outline-offset: 1px;
+}
+
+button {
+    margin-top: 14px;
+    padding: 10px 16px;
+    border: none;
+    border-radius: 6px;
+    background: #0f172a;
+    color: white;
+    cursor: pointer;
+    font: inherit;
+}
+
+button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+button.secondary {
+    background: #475569;
+    margin-top: 0;
+}
+
+button.delete {
+    background: #b91c1c;
+    margin-left: 8px;
+}
+
+.task-heading,
+.task-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.task-list {
+    padding: 0;
+    list-style: none;
+}
+
+.task-item {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 16px;
+    margin: 12px 0;
+}
+
+.task-item h3 {
+    margin: 0 0 6px;
+    overflow-wrap: anywhere;
+}
+
+.task-item p {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.task-item.completed h3 {
+    text-decoration: line-through;
+    color: #64748b;
+}
+
+.status {
+    font-size: 0.85rem;
+    color: #475569;
+}
+
+#message {
+    min-height: 1.5em;
+}
+
+#message.error {
+    color: #b91c1c;
+}
+
+#message.success {
+    color: #166534;
+}
+
+footer {
+    text-align: center;
+    color: #64748b;
+    padding: 12px 0 28px;
+}
+
+@media (max-width: 600px) {
+    .card {
+        padding: 16px;
+    }
+
+    .task-heading,
+    .task-actions {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    button.delete {
+        margin-left: 0;
+    }
+}

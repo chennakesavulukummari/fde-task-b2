@@ -1,0 +1,9 @@
+version: 0.2
+# Job 2 (fde-task-app-provision): create/reuse UI, API and DB EC2 instances (Ubuntu 24.04).
+env:
+  shell: bash
+phases:
+  build:
+    commands:
+      - aws --version
+      - bash scripts/provision.sh

@@ -1,0 +1,12 @@
+version: 0.2
+# Job 1 (fde-task-app-build): validate ui/api/db and push versioned artifacts to S3.
+env:
+  shell: bash
+phases:
+  install:
+    runtime-versions:
+      python: 3.12
+      nodejs: 20
+  build:
+    commands:
+      - bash scripts/build.sh

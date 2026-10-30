@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FDE Task Tracker</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/app.js" defer></script>
+</head>
+<body>
+    <header class="header">
+        <div class="container">
+            <h1>FDE Task Tracker</h1>
+            <p>Learn by building a real-world application</p>
+        </div>
+    </header>
+
+    <main class="container">
+        <section class="card">
+            <h2>Create a Task</h2>
+
+            <form id="task-form">
+                <label for="title">Task title</label>
+                <input
+                    type="text"
+                    id="title"
+                    name="title"
+                    placeholder="Example: Configure Nginx"
+                    maxlength="200"
+                    required
+                >
+
+                <label for="description">Description</label>
+                <textarea
+                    id="description"
+                    name="description"
+                    placeholder="Describe what needs to be done"
+                    rows="3"
+                    maxlength="2000"
+                ></textarea>
+
+                <button type="submit" id="submit-button">
+                    Add Task
+                </button>
+            </form>
+
+            <p id="message" role="status" aria-live="polite"></p>
+        </section>
+
+        <section class="card">
+            <div class="task-heading">
+                <h2>My Tasks</h2>
+                <button type="button" id="refresh-button" class="secondary">
+                    Refresh
+                </button>
+            </div>
+
+            <p id="task-count">Loading tasks...</p>
+            <ul id="task-list" class="task-list"></ul>
+        </section>
+
+        <footer>
+            <p>Cloud Binary | Learn By Doing..</p>
+        </footer>
+    </main>
+</body>
+</html>

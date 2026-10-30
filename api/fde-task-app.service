@@ -1,0 +1,19 @@
+[Unit]
+Description=FDE Task Tracker FastAPI Application
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=fdeapp
+Group=fdeapp
+WorkingDirectory=/opt/fde-task-app
+EnvironmentFile=/opt/fde-task-app/.env
+# Listens on all interfaces because Nginx runs on a separate UI instance.
+# The API security group only allows port 8000 from the UI security group.
+ExecStart=/opt/fde-task-app/.venv/bin/uvicorn app:app --host 0.0.0.0 --port 8000
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

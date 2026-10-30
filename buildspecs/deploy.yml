@@ -1,0 +1,14 @@
+version: 0.2
+# Job 3 (fde-task-app-deploy): pull artifacts from S3 onto the EC2 instances via SSM.
+# Override RELEASE at start-build time to deploy/roll back a specific version.
+env:
+  shell: bash
+  variables:
+    RELEASE: latest
+phases:
+  install:
+    runtime-versions:
+      python: 3.12
+  build:
+    commands:
+      - bash scripts/deploy.sh
