@@ -4,7 +4,8 @@ env:
   shell: bash
   variables:
     APP_NAME: "fde-task-app"
-    ARTIFACT_BUCKET: "s3://fde-artifacts"
+    # FIX 1: Remove the "s3://" prefix. Keep just the bucket name.
+    ARTIFACT_BUCKET: "fde-artifacts"
 
 phases:
   install:
@@ -17,6 +18,8 @@ phases:
   pre_build:
     commands:
       - echo "== Validating UI Code =="
+      - pwd
+      - ls -lrta
       - node --check ui/app.js
       - grep -q '<script src="/app.js"' ui/index.html
       - grep -q '__API_HOST__' ui/nginx.conf.tpl
@@ -27,11 +30,12 @@ phases:
       - echo "== Packaging UI Artifact =="
       - COMMIT_HASH=$(echo "${CODEBUILD_RESOLVED_SOURCE_VERSION:-local}" | cut -c 1-7)
       - RELEASE_VERSION="$(date -u +%Y%m%d-%H%M%S)-${COMMIT_HASH}"
-      - mkdir -p dist
-      - tar -czf dist/ui.tar.gz ui deploy/common.sh deploy/ui.sh
-      - ( cd dist && sha256sum ui.tar.gz > SHA256SUMS )
+      - mkdir -p $CODEBUILD_SRC_DIR/dist
+      - tar -czf $CODEBUILD_SRC_DIR/dist/ui.tar.gz ui deploy/common.sh deploy/ui.sh
+      # FIX 3: Use absolute paths or cd into the absolute workspace dist path safely
+      - ( cd $CODEBUILD_SRC_DIR/dist && sha256sum ui.tar.gz > SHA256SUMS )
       - |
-        cat > dist/manifest.json <<EOF
+        cat > $CODEBUILD_SRC_DIR/dist/manifest.json <<EOF
         {"component":"ui","version":"${RELEASE_VERSION}","commit":"${COMMIT_HASH}","built_at":"$(date -u +%FT%TZ)"}
         EOF
 
@@ -40,8 +44,9 @@ phases:
       - echo "== Pushing to S3 =="
       - |
         if [ -n "${ARTIFACT_BUCKET}" ]; then
-          aws s3 cp dist/ "s3://${ARTIFACT_BUCKET}/${RELEASE_VERSION}/" --recursive
-          echo "${RELEASE_VERSION}" | aws s3 cp - "s3://${ARTIFACT_BUCKET}/ui-LATEST"
+          # FIX 2: Added back the 'releases/' prefix directory structure to match your target layout
+          aws s3 cp $CODEBUILD_SRC_DIR/dist/ "s3://${ARTIFACT_BUCKET}/releases/${RELEASE_VERSION}/" --recursive
+          echo "${RELEASE_VERSION}" | aws s3 cp - "s3://${ARTIFACT_BUCKET}/releases/ui-LATEST"
         fi
 
 artifacts:
