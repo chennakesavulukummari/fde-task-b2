@@ -4,7 +4,7 @@ env:
   shell: bash
   variables:
     APP_NAME: "fde-task-app"
-    ARTIFACT_BUCKET: "s3://fde-artifacts/"
+    ARTIFACT_BUCKET: "s3://fde-artifacts"
 
 phases:
   install:
@@ -40,8 +40,8 @@ phases:
       - echo "== Pushing to S3 =="
       - |
         if [ -n "${ARTIFACT_BUCKET}" ]; then
-          aws s3 cp dist/ "s3://${ARTIFACT_BUCKET}/releases/${RELEASE_VERSION}/" --recursive
-          echo "${RELEASE_VERSION}" | aws s3 cp - "s3://${ARTIFACT_BUCKET}/releases/ui-LATEST"
+          aws s3 cp dist/ "s3://${ARTIFACT_BUCKET}/${RELEASE_VERSION}/" --recursive
+          echo "${RELEASE_VERSION}" | aws s3 cp - "s3://${ARTIFACT_BUCKET}/ui-LATEST"
         fi
 
 artifacts:
