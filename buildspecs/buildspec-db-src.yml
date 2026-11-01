@@ -1,0 +1,49 @@
+version: 0.2
+
+env:
+  shell: bash
+  variables:
+    APP_NAME: "fde-task-app"
+    ARTIFACT_BUCKET: "fde-artifacts"
+
+phases:
+  install:
+    commands:
+      - aws --version
+
+  pre_build:
+    commands:
+      - echo "== Validating DB Schema & Scripts =="
+      - pwd
+      - ls -lrta
+      - grep -qi 'CREATE TABLE IF NOT EXISTS tasks' db/init.sql
+      - bash -n deploy/common.sh deploy/db.sh
+
+  build:
+    commands:
+      - echo "== Packaging DB Artifact =="
+      - COMMIT_HASH=$(echo "${CODEBUILD_RESOLVED_SOURCE_VERSION:-local}" | cut -c 1-7)
+      - RELEASE_VERSION="$(date -u +%Y%m%d-%H%M%S)-${COMMIT_HASH}"
+      - mkdir -p $CODEBUILD_SRC_DIR/dist
+      - tar -czf $CODEBUILD_SRC_DIR/dist/db.tar.gz db deploy/common.sh deploy/db.sh
+      - ( cd $CODEBUILD_SRC_DIR/dist && sha256sum db.tar.gz > SHA256SUMS )
+      - |
+        cat > $CODEBUILD_SRC_DIR/dist/manifest.json <<EOF
+        {"component":"db","version":"${RELEASE_VERSION}","commit":"${COMMIT_HASH}","built_at":"$(date -u +%FT%TZ)"}
+        EOF
+
+  post_build:
+    commands:
+      - echo "== Pushing to S3 =="
+      - |
+        if [ -n "${ARTIFACT_BUCKET}" ]; then
+          aws s3 cp $CODEBUILD_SRC_DIR/dist/ "s3://${ARTIFACT_BUCKET}/releases/${RELEASE_VERSION}/" --recursive
+          echo "${RELEASE_VERSION}" | aws s3 cp - "s3://${ARTIFACT_BUCKET}/releases/db-LATEST"
+        fi
+
+artifacts:
+  files:
+    - '**/*'
+  base-directory: 'dist'
+  name: db-artifact
+
