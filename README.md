@@ -122,3 +122,12 @@ Add an EventBridge rule on CodeCommit `referenceUpdated` (branch `main`) → sta
 `fde-task-app-build`, and a rule on CodeBuild `Build State Change = SUCCEEDED` for that project
 → start `fde-task-app-deploy`. Or wrap build + deploy in CodePipeline, which is also
 available in ap-south-2.
+
+
+
+```
+Recommended Execution Order in CodeBuild
+DB: Run buildspec-db-src.yml → then buildspec-db-deploy.yml
+API: Run buildspec-api-src.yml → then buildspec-api-deploy.yml
+UI: Run buildspec-ui-src.yml → then buildspec-ui-deploy.yml (or run provision.yml followed by deploy.yml to provision and deploy all three in order).
+```

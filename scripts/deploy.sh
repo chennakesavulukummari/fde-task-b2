@@ -45,8 +45,12 @@ print(json.dumps({"executionTimeout": ["1800"], "commands": [
   "set -e",
   "export DEBIAN_FRONTEND=noninteractive",
   "export PATH=$PATH:/snap/bin:/usr/local/bin",
+  "echo 'Waiting for cloud-init (first-boot user-data) to finish...'",
+  "if command -v cloud-init >/dev/null 2>&1; then cloud-init status --wait >/dev/null 2>&1 || true; fi",
+  "while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do sleep 2; done",
+  "while snap changes 2>/dev/null | grep -q 'Doing'; do sleep 2; done",
   "dpkg -s unzip curl >/dev/null 2>&1 || (apt-get -o DPkg::Lock::Timeout=300 update -y && apt-get -o DPkg::Lock::Timeout=300 install -y unzip curl)",
-  "command -v aws >/dev/null || snap install aws-cli --classic",
+  "command -v aws >/dev/null 2>&1 || snap install aws-cli --classic",
   f"rm -rf {d} && mkdir -p {d}",
   f"if aws s3 ls s3://{b}/{role}-artifact.zip --region {r} >/dev/null 2>&1; then "
   f"  echo 'Pulling s3://{b}/{role}-artifact.zip'; "

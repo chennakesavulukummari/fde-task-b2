@@ -24,6 +24,7 @@ apt_install() {
 }
 
 ensure_awscli() {
+  while snap changes 2>/dev/null | grep -q 'Doing'; do sleep 2; done
   if ! command -v aws >/dev/null 2>&1; then
     snap install aws-cli --classic || {
       apt_install unzip curl
