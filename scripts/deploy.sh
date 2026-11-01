@@ -133,6 +133,10 @@ if [ "$TARGET_ROLE" = "all" ] || [ "$TARGET_ROLE" = "db" ]; then
   run_on db ""
 fi
 if [ "$TARGET_ROLE" = "all" ] || [ "$TARGET_ROLE" = "api" ]; then
+  if [ "$TARGET_ROLE" = "api" ] && [ "$DB_IP" != "None" ]; then
+    echo "== Ensuring DB ($DB_IP) is configured and listening on 0.0.0.0:3306 before starting API =="
+    run_on db ""
+  fi
   run_on api "DB_HOST=$DB_IP"
 fi
 if [ "$TARGET_ROLE" = "all" ] || [ "$TARGET_ROLE" = "ui" ]; then

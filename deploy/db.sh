@@ -8,7 +8,10 @@ source "$RELEASE_DIR/deploy/common.sh"
 wait_for_boot
 apt_install mysql-server unzip curl
 
-log "Configuring MySQL to listen on the private network"
+log "Configuring MySQL to listen on 0.0.0.0:3306 (private VPC network)"
+if [ -f /etc/mysql/mysql.conf.d/mysqld.cnf ]; then
+  sed -i 's/^[[:space:]]*bind-address.*/bind-address = 0.0.0.0/' /etc/mysql/mysql.conf.d/mysqld.cnf
+fi
 cat > /etc/mysql/mysql.conf.d/99-fde.cnf <<'EOF'
 [mysqld]
 bind-address        = 0.0.0.0
@@ -18,6 +21,7 @@ systemctl enable mysql
 systemctl restart mysql
 
 for i in $(seq 1 30); do mysqladmin ping >/dev/null 2>&1 && break; sleep 2; done
+ss -tlnp | grep 3306 || true
 
 log "Applying schema from db/init.sql"
 mysql < "$RELEASE_DIR/db/init.sql"
