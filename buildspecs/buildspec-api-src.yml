@@ -1,0 +1,57 @@
+version: 0.2
+
+env:
+  shell: bash
+  variables:
+    APP_NAME: "fde-task-app"
+    ARTIFACT_BUCKET: "fde-artifacts"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.12
+    commands:
+      - python3 --version
+      - pip --version
+      - aws --version
+
+  pre_build:
+    commands:
+      - echo "== Validating API Code =="
+      - pwd
+      - ls -lrta
+      - python3 -m venv /tmp/venv
+      - /tmp/venv/bin/pip install --quiet -r api/requirements.txt
+      - /tmp/venv/bin/python -m py_compile api/app.py
+      - ( cd api && /tmp/venv/bin/python -c "import app; print('routes:', [r.path for r in app.app.routes])" )
+      - bash -n deploy/common.sh deploy/api.sh
+
+  build:
+    commands:
+      - echo "== Packaging API Artifact =="
+      - COMMIT_HASH=$(echo "${CODEBUILD_RESOLVED_SOURCE_VERSION:-local}" | cut -c 1-7)
+      - RELEASE_VERSION="$(date -u +%Y%m%d-%H%M%S)-${COMMIT_HASH}"
+      - mkdir -p $CODEBUILD_SRC_DIR/dist
+      - find . -name __pycache__ -type d -prune -exec rm -rf {} +
+      - tar -czf $CODEBUILD_SRC_DIR/dist/api.tar.gz api deploy/common.sh deploy/api.sh
+      - ( cd $CODEBUILD_SRC_DIR/dist && sha256sum api.tar.gz > SHA256SUMS )
+      - |
+        cat > $CODEBUILD_SRC_DIR/dist/manifest.json <<EOF
+        {"component":"api","version":"${RELEASE_VERSION}","commit":"${COMMIT_HASH}","built_at":"$(date -u +%FT%TZ)"}
+        EOF
+
+  post_build:
+    commands:
+      - echo "== Pushing to S3 =="
+      - |
+        if [ -n "${ARTIFACT_BUCKET}" ]; then
+          aws s3 cp $CODEBUILD_SRC_DIR/dist/ "s3://${ARTIFACT_BUCKET}/releases/${RELEASE_VERSION}/" --recursive
+          echo "${RELEASE_VERSION}" | aws s3 cp - "s3://${ARTIFACT_BUCKET}/releases/api-LATEST"
+        fi
+
+artifacts:
+  files:
+    - '**/*'
+  base-directory: 'dist'
+  name: api-artifact
+
