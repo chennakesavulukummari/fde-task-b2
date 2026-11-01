@@ -49,8 +49,8 @@ cat > "$TMP/ec2-trust.json" <<'EOF'
 EOF
 cat > "$TMP/ec2-policy.json" <<EOF
 {"Version":"2012-10-17","Statement":[
- {"Effect":"Allow","Action":["s3:GetObject"],"Resource":"arn:aws:s3:::$ARTIFACT_BUCKET/releases/*"},
- {"Effect":"Allow","Action":["s3:ListBucket"],"Resource":"arn:aws:s3:::$ARTIFACT_BUCKET"},
+ {"Effect":"Allow","Action":["s3:GetObject"],"Resource":["arn:aws:s3:::$ARTIFACT_BUCKET/*","arn:aws:s3:::fde-artifacts/*"]},
+ {"Effect":"Allow","Action":["s3:ListBucket"],"Resource":["arn:aws:s3:::$ARTIFACT_BUCKET","arn:aws:s3:::fde-artifacts"]},
  {"Effect":"Allow","Action":["ssm:GetParameter"],"Resource":"arn:aws:ssm:$AWS_REGION:$ACCOUNT_ID:parameter/$APP_NAME/*"}
 ]}
 EOF
