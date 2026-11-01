@@ -34,6 +34,7 @@ phases:
       - mkdir -p $CODEBUILD_SRC_DIR/dist
       - find . -name __pycache__ -type d -prune -exec rm -rf {} +
       - tar -czf $CODEBUILD_SRC_DIR/dist/api.tar.gz api deploy/common.sh deploy/api.sh
+      - zip -r $CODEBUILD_SRC_DIR/dist/api-artifact.zip api deploy/common.sh deploy/api.sh
       - ( cd $CODEBUILD_SRC_DIR/dist && sha256sum api.tar.gz > SHA256SUMS )
       - |
         cat > $CODEBUILD_SRC_DIR/dist/manifest.json <<EOF
@@ -46,6 +47,7 @@ phases:
       - |
         if [ -n "${ARTIFACT_BUCKET}" ]; then
           aws s3 cp $CODEBUILD_SRC_DIR/dist/ "s3://${ARTIFACT_BUCKET}/releases/${RELEASE_VERSION}/" --recursive
+          aws s3 cp $CODEBUILD_SRC_DIR/dist/api-artifact.zip "s3://${ARTIFACT_BUCKET}/api-artifact.zip"
           echo "${RELEASE_VERSION}" | aws s3 cp - "s3://${ARTIFACT_BUCKET}/releases/api-LATEST"
         fi
 
@@ -54,4 +56,3 @@ artifacts:
     - '**/*'
   base-directory: 'dist'
   name: api-artifact
-

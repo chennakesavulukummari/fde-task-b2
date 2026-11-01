@@ -1,0 +1,31 @@
+version: 0.2
+# Provision API Ubuntu EC2 instance, install Python/venv/pip & utilities (unzip, curl, aws-cli),
+# pull api-artifact.zip / api.tar.gz from S3, unzip and deploy FastAPI service to /opt/fde-task-app.
+
+env:
+  shell: bash
+  variables:
+    APP_NAME: "fde-task-app"
+    ARTIFACT_BUCKET: "fde-artifacts"
+    AWS_REGION: "ap-south-2"
+    ROLE: "api"
+    RELEASE: "latest"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.12
+    commands:
+      - aws --version
+      - python3 --version
+
+  pre_build:
+    commands:
+      - echo "== Provisioning API Linux Instance & Security Group =="
+      - ROLE=api bash scripts/provision.sh
+
+  build:
+    commands:
+      - echo "== Pulling API Artifact from S3 & Deploying FastAPI Service (/opt/fde-task-app) =="
+      - ROLE=api bash scripts/deploy.sh
+

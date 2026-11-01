@@ -26,6 +26,7 @@ phases:
       - RELEASE_VERSION="$(date -u +%Y%m%d-%H%M%S)-${COMMIT_HASH}"
       - mkdir -p $CODEBUILD_SRC_DIR/dist
       - tar -czf $CODEBUILD_SRC_DIR/dist/db.tar.gz db deploy/common.sh deploy/db.sh
+      - zip -r $CODEBUILD_SRC_DIR/dist/db-artifact.zip db deploy/common.sh deploy/db.sh
       - ( cd $CODEBUILD_SRC_DIR/dist && sha256sum db.tar.gz > SHA256SUMS )
       - |
         cat > $CODEBUILD_SRC_DIR/dist/manifest.json <<EOF
@@ -38,6 +39,7 @@ phases:
       - |
         if [ -n "${ARTIFACT_BUCKET}" ]; then
           aws s3 cp $CODEBUILD_SRC_DIR/dist/ "s3://${ARTIFACT_BUCKET}/releases/${RELEASE_VERSION}/" --recursive
+          aws s3 cp $CODEBUILD_SRC_DIR/dist/db-artifact.zip "s3://${ARTIFACT_BUCKET}/db-artifact.zip"
           echo "${RELEASE_VERSION}" | aws s3 cp - "s3://${ARTIFACT_BUCKET}/releases/db-LATEST"
         fi
 
@@ -46,4 +48,3 @@ artifacts:
     - '**/*'
   base-directory: 'dist'
   name: db-artifact
-

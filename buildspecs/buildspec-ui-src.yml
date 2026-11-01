@@ -32,6 +32,7 @@ phases:
       - RELEASE_VERSION="$(date -u +%Y%m%d-%H%M%S)-${COMMIT_HASH}"
       - mkdir -p $CODEBUILD_SRC_DIR/dist
       - tar -czf $CODEBUILD_SRC_DIR/dist/ui.tar.gz ui deploy/common.sh deploy/ui.sh
+      - zip -r $CODEBUILD_SRC_DIR/dist/ui-artifact.zip ui deploy/common.sh deploy/ui.sh
       # FIX 3: Use absolute paths or cd into the absolute workspace dist path safely
       - ( cd $CODEBUILD_SRC_DIR/dist && sha256sum ui.tar.gz > SHA256SUMS )
       - |
@@ -46,6 +47,7 @@ phases:
         if [ -n "${ARTIFACT_BUCKET}" ]; then
           # FIX 2: Added back the 'releases/' prefix directory structure to match your target layout
           aws s3 cp $CODEBUILD_SRC_DIR/dist/ "s3://${ARTIFACT_BUCKET}/releases/${RELEASE_VERSION}/" --recursive
+          aws s3 cp $CODEBUILD_SRC_DIR/dist/ui-artifact.zip "s3://${ARTIFACT_BUCKET}/ui-artifact.zip"
           echo "${RELEASE_VERSION}" | aws s3 cp - "s3://${ARTIFACT_BUCKET}/releases/ui-LATEST"
         fi
 

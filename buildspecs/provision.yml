@@ -1,7 +1,13 @@
 version: 0.2
-# Job 2 (fde-task-app-provision): create/reuse UI, API and DB EC2 instances (Ubuntu 24.04).
+# Provision all 3 EC2 instances (DB, API, UI) on Ubuntu 24.04 using AWS CLI.
 env:
   shell: bash
+  variables:
+    APP_NAME: "fde-task-app"
+    ARTIFACT_BUCKET: "fde-artifacts"
+    AWS_REGION: "ap-south-2"
+    ROLE: "all"
+
 phases:
   build:
     commands:

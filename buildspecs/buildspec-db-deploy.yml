@@ -1,0 +1,31 @@
+version: 0.2
+# Provision DB Ubuntu EC2 instance, install MySQL Server & utilities (unzip, curl, aws-cli),
+# pull db-artifact.zip / db.tar.gz from S3, unzip and apply schema (db/init.sql).
+
+env:
+  shell: bash
+  variables:
+    APP_NAME: "fde-task-app"
+    ARTIFACT_BUCKET: "fde-artifacts"
+    AWS_REGION: "ap-south-2"
+    ROLE: "db"
+    RELEASE: "latest"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.12
+    commands:
+      - aws --version
+      - python3 --version
+
+  pre_build:
+    commands:
+      - echo "== Provisioning DB Linux Instance & Security Group =="
+      - ROLE=db bash scripts/provision.sh
+
+  build:
+    commands:
+      - echo "== Pulling DB Artifact from S3 & Configuring MySQL =="
+      - ROLE=db bash scripts/deploy.sh
+

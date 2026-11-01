@@ -1,0 +1,31 @@
+version: 0.2
+# Provision UI Ubuntu EC2 instance, install Nginx & utilities (unzip, curl, aws-cli),
+# pull ui-artifact.zip / ui.tar.gz from S3, unzip and deploy to /var/www/fde-task-app.
+
+env:
+  shell: bash
+  variables:
+    APP_NAME: "fde-task-app"
+    ARTIFACT_BUCKET: "fde-artifacts"
+    AWS_REGION: "ap-south-2"
+    ROLE: "ui"
+    RELEASE: "latest"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.12
+    commands:
+      - aws --version
+      - python3 --version
+
+  pre_build:
+    commands:
+      - echo "== Provisioning UI Linux Instance & Security Group =="
+      - ROLE=ui bash scripts/provision.sh
+
+  build:
+    commands:
+      - echo "== Pulling UI Artifact from S3 & Deploying to Nginx DocumentRoot (/var/www/fde-task-app) =="
+      - ROLE=ui bash scripts/deploy.sh
+

@@ -1,10 +1,15 @@
 version: 0.2
-# Job 3 (fde-task-app-deploy): pull artifacts from S3 onto the EC2 instances via SSM.
-# Override RELEASE at start-build time to deploy/roll back a specific version.
+# Pull artifacts from S3 onto the DB, API, and UI EC2 instances via SSM and deploy.
+# Override ROLE (all|ui|api|db) or RELEASE at start-build time if needed.
 env:
   shell: bash
   variables:
-    RELEASE: latest
+    APP_NAME: "fde-task-app"
+    ARTIFACT_BUCKET: "fde-artifacts"
+    AWS_REGION: "ap-south-2"
+    ROLE: "all"
+    RELEASE: "latest"
+
 phases:
   install:
     runtime-versions:
