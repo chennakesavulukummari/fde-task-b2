@@ -3,14 +3,15 @@
 # from S3 onto each EC2 instance via SSM Run Command, install dependencies, and deploy.
 # Needs env: ARTIFACT_BUCKET. Optional: ROLE (all|ui|api|db, default "all"), RELEASE (default "latest").
 set -euo pipefail
-source "$(dirname "$0")/../config.env"
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+source "$REPO_ROOT/config.env"
 : "${ARTIFACT_BUCKET:?ARTIFACT_BUCKET required}"
 
 TARGET_ROLE="${ROLE:-all}"
 RELEASE="${RELEASE:-latest}"
 DB_PASSWORD=$(aws ssm get-parameter --region "$AWS_REGION" --name "$DB_PASSWORD_PARAM" \
   --with-decryption --query Parameter.Value --output text 2>/dev/null || echo "FdeTaskPass123456")
-export ARTIFACT_BUCKET RELEASE DB_PASSWORD
+export ARTIFACT_BUCKET RELEASE DB_PASSWORD REPO_ROOT
 
 instance_field() {  # role field(InstanceId|PrivateIpAddress|PublicIpAddress)
   aws ec2 describe-instances \
@@ -59,13 +60,17 @@ run_on() {  # role "ENV=val ENV2=val2"
   fi
 
   params=$(TAR_URL="$tar_url" SUM_URL="$sum_url" ZIP_URL="$zip_url" python3 - "$role" "$envs" "$v" <<'PY'
-import json, os, sys
+import base64, json, os, pathlib, sys
 role, envs, v = sys.argv[1], sys.argv[2], sys.argv[3]
 r = os.environ["AWS_REGION"]
+repo_root = pathlib.Path(os.environ["REPO_ROOT"])
 tar_url = os.environ.get("TAR_URL", "")
 sum_url = os.environ.get("SUM_URL", "")
 zip_url = os.environ.get("ZIP_URL", "")
 d = "/tmp/fde-release"
+
+common_b64 = base64.b64encode((repo_root / "deploy" / "common.sh").read_bytes()).decode()
+role_b64 = base64.b64encode((repo_root / "deploy" / f"{role}.sh").read_bytes()).decode()
 
 cmds = [
   "set -e",
@@ -76,7 +81,7 @@ cmds = [
   "while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do sleep 2; done",
   "while snap changes 2>/dev/null | grep -q 'Doing'; do sleep 2; done",
   "dpkg -s unzip curl >/dev/null 2>&1 || (apt-get -o DPkg::Lock::Timeout=300 update -y && apt-get -o DPkg::Lock::Timeout=300 install -y unzip curl)",
-  f"rm -rf {d} && mkdir -p {d}",
+  f"rm -rf {d} && mkdir -p {d}/deploy",
 ]
 
 if zip_url:
@@ -92,6 +97,10 @@ elif tar_url:
 cmds += [
   f"if [ -f {d}/SHA256SUMS ] && [ -f {d}/{role}.tar.gz ]; then cd {d} && grep ' {role}.tar.gz$' SHA256SUMS | sha256sum -c -; fi",
   f"if [ -f {d}/{role}.tar.gz ]; then tar -xzf {d}/{role}.tar.gz -C {d}; fi",
+  # Always use the latest deploy/common.sh and deploy/<role>.sh from the repo checkout
+  f"echo '{common_b64}' | base64 -d > {d}/deploy/common.sh",
+  f"echo '{role_b64}' | base64 -d > {d}/deploy/{role}.sh",
+  f"chmod +x {d}/deploy/common.sh {d}/deploy/{role}.sh",
   f"env AWS_REGION={r} APP_VERSION={v} DB_PASSWORD_PARAM={os.environ['DB_PASSWORD_PARAM']} DB_PASSWORD={os.environ['DB_PASSWORD']} {envs} bash {d}/deploy/{role}.sh {d}",
 ]
 
@@ -107,8 +116,12 @@ PY
       --query Status --output text 2>/dev/null || echo Pending)
     case $status in Pending|InProgress|Delayed) sleep 10 ;; *) break ;; esac
   done
+  echo "--- SSM StandardOutput ---"
   aws ssm get-command-invocation --command-id "$cmd_id" --instance-id "$id" \
-    --query '[StandardOutputContent,StandardErrorContent]' --output text
+    --query 'StandardOutputContent' --output text
+  echo "--- SSM StandardError ---"
+  aws ssm get-command-invocation --command-id "$cmd_id" --instance-id "$id" \
+    --query 'StandardErrorContent' --output text
   [ "$status" = "Success" ] || { echo "$role deploy FAILED ($status)"; exit 1; }
 }
 
