@@ -1,0 +1,22 @@
+version: 0.2
+# Job 1 (Single Source Build): Validate UI, API, and DB source code in one job and push all 3 artifacts to S3.
+env:
+  shell: bash
+  variables:
+    APP_NAME: "fde-task-app"
+    ARTIFACT_BUCKET: "fde-artifacts"
+    AWS_REGION: "ap-south-2"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.12
+      nodejs: 20
+    commands:
+      - node --version
+      - python3 --version
+      - aws --version
+  build:
+    commands:
+      - bash scripts/build.sh
+

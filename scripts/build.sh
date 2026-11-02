@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CodeBuild job 1: validate ("compile") ui/api/db and push versioned artifacts to S3.
+# CodeBuild Job 1 (Single Source Build): validate ("compile") ui/api/db and push versioned artifacts to S3.
 # Needs env: ARTIFACT_BUCKET
 set -euo pipefail
 source "$(dirname "$0")/../config.env"
@@ -25,12 +25,15 @@ echo "== Validate DB + scripts =="
 grep -qi 'CREATE TABLE IF NOT EXISTS tasks' db/init.sql
 for f in deploy/*.sh scripts/*.sh; do bash -n "$f"; done
 
-echo "== Package =="
+echo "== Package UI, API, and DB Artifacts =="
 rm -rf dist && mkdir -p dist
 find . -name __pycache__ -type d -prune -exec rm -rf {} +
 tar -czf dist/ui.tar.gz  ui  deploy/common.sh deploy/ui.sh
 tar -czf dist/api.tar.gz api deploy/common.sh deploy/api.sh
 tar -czf dist/db.tar.gz  db  deploy/common.sh deploy/db.sh
+zip -qr dist/ui-artifact.zip  ui  deploy/common.sh deploy/ui.sh
+zip -qr dist/api-artifact.zip api deploy/common.sh deploy/api.sh
+zip -qr dist/db-artifact.zip  db  deploy/common.sh deploy/db.sh
 ( cd dist && sha256sum *.tar.gz > SHA256SUMS )
 cat > dist/manifest.json <<EOF
 {"version":"$VERSION","commit":"$COMMIT","built_at":"$(date -u +%FT%TZ)","build_id":"${CODEBUILD_BUILD_ID:-local}"}
@@ -39,5 +42,10 @@ ls -l dist
 
 echo "== Upload to s3://$ARTIFACT_BUCKET/releases/$VERSION/ =="
 aws s3 cp dist/ "s3://$ARTIFACT_BUCKET/releases/$VERSION/" --recursive
-echo "$VERSION" | aws s3 cp - "s3://$ARTIFACT_BUCKET/releases/LATEST"
-echo "Published $VERSION (marked LATEST)"
+aws s3 cp dist/ui-artifact.zip  "s3://$ARTIFACT_BUCKET/ui-artifact.zip"
+aws s3 cp dist/api-artifact.zip "s3://$ARTIFACT_BUCKET/api-artifact.zip"
+aws s3 cp dist/db-artifact.zip  "s3://$ARTIFACT_BUCKET/db-artifact.zip"
+for pointer in LATEST ui-LATEST api-LATEST db-LATEST; do
+  echo "$VERSION" | aws s3 cp - "s3://$ARTIFACT_BUCKET/releases/$pointer"
+done
+echo "Published $VERSION (marked LATEST, ui-LATEST, api-LATEST, db-LATEST)"
