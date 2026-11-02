@@ -23,15 +23,14 @@ phases:
 
   pre_build:
     commands:
-      - echo "== Step 1: Provisioning Single Ubuntu 24.04 EC2 Instance & Security Group =="
+      - echo "== Step 1 - Provisioning Single Ubuntu 24.04 EC2 Instance & Security Group =="
       - bash scripts/provision.sh
 
   build:
     commands:
-      - echo "== Step 2: Deploying Database (MySQL on 127.0.0.1:3306) to Single Instance =="
+      - echo "== Step 2 - Deploying Database (MySQL on 127.0.0.1:3306) to Single Instance =="
       - ROLE=db bash scripts/deploy.sh
-      - echo "== Step 3: Deploying Backend API (FastAPI on 127.0.0.1:8000) to Single Instance =="
+      - echo "== Step 3 - Deploying Backend API (FastAPI on 127.0.0.1:8000) to Single Instance =="
       - ROLE=api bash scripts/deploy.sh
-      - echo "== Step 4: Deploying Frontend UI (Nginx on Port 80) to Single Instance & Smoke Test =="
+      - echo "== Step 4 - Deploying Frontend UI (Nginx on Port 80) to Single Instance & Smoke Test =="
       - ROLE=ui bash scripts/deploy.sh
-
