@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# CodeBuild job: provision UI, API and/or DB EC2 instances (Ubuntu 24.04) with the AWS CLI.
-# Idempotent: re-running reuses existing security groups and instances.
-# Optional env: ROLE (all|ui|api|db, default: all)
+# CodeBuild job: provision a SINGLE Ubuntu 24.04 EC2 instance hosting UI (Nginx),
+# API (FastAPI/Uvicorn), and DB (MySQL) with the AWS CLI.
+# Idempotent: re-running reuses the existing security group and single instance.
 set -euo pipefail
 source "$(dirname "$0")/../config.env"
 
-TARGET_ROLE="${ROLE:-all}"
 TAG_FILTER="Name=tag:App,Values=$APP_NAME"
 
 echo "== Ubuntu AMI =="
@@ -52,53 +51,34 @@ ensure_sg() {  # name description -> prints sg id
   echo "$id"
 }
 
-allow() {  # sg-id port source(cidr|sg-id)
-  local sg=$1 port=$2 src=$3 perm
-  if [[ $src == sg-* ]]; then
-    perm="IpProtocol=tcp,FromPort=$port,ToPort=$port,UserIdGroupPairs=[{GroupId=$src}]"
-  else
-    perm="IpProtocol=tcp,FromPort=$port,ToPort=$port,IpRanges=[{CidrIp=$src}]"
-  fi
-  aws ec2 authorize-security-group-ingress --group-id "$sg" --ip-permissions "$perm" \
-    >/dev/null 2>&1 || true   # already exists
-}
+echo "== Security Group (Single Instance - Port 80 Only) =="
+SINGLE_SG=$(ensure_sg "$APP_NAME-sg" "FDE Single Instance - HTTP 80 from internet (API 8000 & DB 3306 local)")
+aws ec2 authorize-security-group-ingress --group-id "$SINGLE_SG" \
+  --ip-permissions "IpProtocol=tcp,FromPort=80,ToPort=80,IpRanges=[{CidrIp=${UI_ALLOWED_CIDR:-0.0.0.0/0}}]" \
+  >/dev/null 2>&1 || true
+echo "SG=$SINGLE_SG (Inbound :80 only; API :8000 and MySQL :3306 stay on 127.0.0.1)"
 
-echo "== Security groups =="
-UI_SG=$(ensure_sg  "$APP_NAME-ui-sg"  "FDE UI - HTTP from internet")
-API_SG=$(ensure_sg "$APP_NAME-api-sg" "FDE API - 8000 from UI only")
-DB_SG=$(ensure_sg  "$APP_NAME-db-sg"  "FDE DB - 3306 from API only")
-allow "$UI_SG"  80   "${UI_ALLOWED_CIDR:-0.0.0.0/0}"
-allow "$API_SG" 8000 "$UI_SG"
-allow "$DB_SG"  3306 "$API_SG"
-echo "UI=$UI_SG API=$API_SG DB=$DB_SG  (no SSH: access is via SSM Session Manager)"
-
-user_data() {  # role -> base packages + utilities installed at first boot
-  local pkgs
-  case $1 in
-    ui)  pkgs="nginx unzip curl" ;;
-    api) pkgs="python3-venv python3-pip unzip curl" ;;
-    db)  pkgs="mysql-server unzip curl" ;;
-  esac
+user_data() {
   cat <<EOF
 #!/bin/bash
 set -e
 export DEBIAN_FRONTEND=noninteractive
-hostnamectl set-hostname $APP_NAME-$1
+hostnamectl set-hostname $APP_NAME-single
 apt-get update -y
-apt-get install -y $pkgs
+apt-get install -y nginx python3-venv python3-pip mysql-server unzip curl
 snap list aws-cli >/dev/null 2>&1 || snap install aws-cli --classic
 EOF
 }
 
-ensure_instance() {  # role type sg -> prints instance id
-  local role=$1 type=$2 sg=$3 id state
+ensure_single_instance() {
+  local role="single" type="$SINGLE_INSTANCE_TYPE" sg="$SINGLE_SG" id state
   read -r id state < <(aws ec2 describe-instances \
     --filters "$TAG_FILTER" "Name=tag:Role,Values=$role" \
               Name=instance-state-name,Values=pending,running,stopping,stopped \
     --query 'Reservations[].Instances[0].[InstanceId,State.Name]' --output text | head -1) || true
   if [ -n "${id:-}" ] && [ "$id" != "None" ]; then
     [ "$state" = "stopped" ] && aws ec2 start-instances --instance-ids "$id" >/dev/null
-    echo "  $role: reusing $id ($state)" >&2
+    echo "  single-instance: reusing $id ($state)" >&2
   else
     id=$(aws ec2 run-instances \
       --image-id "$AMI_ID" --instance-type "$type" --count 1 \
@@ -107,45 +87,31 @@ ensure_instance() {  # role type sg -> prints instance id
       --iam-instance-profile Name="$EC2_INSTANCE_PROFILE" \
       --metadata-options HttpTokens=required,HttpEndpoint=enabled \
       --block-device-mappings "DeviceName=/dev/sda1,Ebs={VolumeSize=$ROOT_VOLUME_GB,VolumeType=gp3,Encrypted=true}" \
-      --user-data "$(user_data "$role")" \
+      --user-data "$(user_data)" \
       --tag-specifications \
-        "ResourceType=instance,Tags=[{Key=Name,Value=$APP_NAME-$role},{Key=App,Value=$APP_NAME},{Key=Role,Value=$role}]" \
+        "ResourceType=instance,Tags=[{Key=Name,Value=$APP_NAME-single},{Key=App,Value=$APP_NAME},{Key=Role,Value=$role}]" \
         "ResourceType=volume,Tags=[{Key=App,Value=$APP_NAME},{Key=Role,Value=$role}]" \
       --query 'Instances[0].InstanceId' --output text)
-    echo "  $role: launched $id ($type)" >&2
+    echo "  single-instance: launched $id ($type)" >&2
   fi
   echo "$id"
 }
 
-echo "== Instances (ROLE=$TARGET_ROLE) =="
-INSTANCE_IDS=()
-if [ "$TARGET_ROLE" = "all" ] || [ "$TARGET_ROLE" = "db" ]; then
-  DB_ID=$(ensure_instance db "$DB_INSTANCE_TYPE" "$DB_SG")
-  INSTANCE_IDS+=("$DB_ID")
-fi
-if [ "$TARGET_ROLE" = "all" ] || [ "$TARGET_ROLE" = "api" ]; then
-  API_ID=$(ensure_instance api "$API_INSTANCE_TYPE" "$API_SG")
-  INSTANCE_IDS+=("$API_ID")
-fi
-if [ "$TARGET_ROLE" = "all" ] || [ "$TARGET_ROLE" = "ui" ]; then
-  UI_ID=$(ensure_instance ui "$UI_INSTANCE_TYPE" "$UI_SG")
-  INSTANCE_IDS+=("$UI_ID")
-fi
+echo "== Provisioning Single EC2 Instance =="
+SINGLE_ID=$(ensure_single_instance)
 
-aws ec2 wait instance-running --instance-ids "${INSTANCE_IDS[@]}"
-echo "Instance(s) running. Waiting for SSM agent registration..."
+aws ec2 wait instance-running --instance-ids "$SINGLE_ID"
+echo "Instance $SINGLE_ID is running. Waiting for SSM agent registration..."
 
-for id in "${INSTANCE_IDS[@]}"; do
-  for i in $(seq 1 60); do
-    s=$(aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$id" \
-      --query 'InstanceInformationList[0].PingStatus' --output text)
-    [ "$s" = "Online" ] && { echo "  $id: SSM Online"; break; }
-    [ "$i" = 60 ] && { echo "  $id never registered with SSM (check instance profile / outbound internet)"; exit 1; }
-    sleep 10
-  done
+for i in $(seq 1 60); do
+  s=$(aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$SINGLE_ID" \
+    --query 'InstanceInformationList[0].PingStatus' --output text)
+  [ "$s" = "Online" ] && { echo "  $SINGLE_ID: SSM Online"; break; }
+  [ "$i" = 60 ] && { echo "  $SINGLE_ID never registered with SSM (check instance profile / outbound internet)"; exit 1; }
+  sleep 10
 done
 
 echo "== Summary =="
-aws ec2 describe-instances --instance-ids "${INSTANCE_IDS[@]}" \
-  --query 'Reservations[].Instances[].[Tags[?Key==`Role`]|[0].Value,InstanceId,InstanceType,PrivateIpAddress,PublicIpAddress]' \
+aws ec2 describe-instances --instance-ids "$SINGLE_ID" \
+  --query 'Reservations[].Instances[].[Tags[?Key==`Name`]|[0].Value,InstanceId,InstanceType,PrivateIpAddress,PublicIpAddress]' \
   --output table

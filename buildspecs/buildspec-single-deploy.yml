@@ -1,0 +1,37 @@
+version: 0.2
+# Single Instance Step-by-Step Deployment via CodeBuild:
+# Step 1: Provision a single Ubuntu 24.04 EC2 instance (fde-task-app-single) & Security Group (:80)
+# Step 2: Pull db-artifact from S3 & configure local MySQL (127.0.0.1:3306)
+# Step 3: Pull api-artifact from S3 & start FastAPI systemd service (127.0.0.1:8000)
+# Step 4: Pull ui-artifact from S3, configure Nginx (/var/www/fde-task-app -> 127.0.0.1:8000) & run smoke test
+
+env:
+  shell: bash
+  variables:
+    APP_NAME: "fde-task-app"
+    ARTIFACT_BUCKET: "fde-artifacts"
+    AWS_REGION: "ap-south-2"
+    RELEASE: "latest"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.12
+    commands:
+      - aws --version
+      - python3 --version
+
+  pre_build:
+    commands:
+      - echo "== Step 1: Provisioning Single Ubuntu 24.04 EC2 Instance & Security Group =="
+      - bash scripts/provision.sh
+
+  build:
+    commands:
+      - echo "== Step 2: Deploying Database (MySQL on 127.0.0.1:3306) to Single Instance =="
+      - ROLE=db bash scripts/deploy.sh
+      - echo "== Step 3: Deploying Backend API (FastAPI on 127.0.0.1:8000) to Single Instance =="
+      - ROLE=api bash scripts/deploy.sh
+      - echo "== Step 4: Deploying Frontend UI (Nginx on Port 80) to Single Instance & Smoke Test =="
+      - ROLE=ui bash scripts/deploy.sh
+

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# CodeBuild job: pull artifacts (ui-artifact.zip / api-artifact.zip / db-artifact.zip or releases/<role>-LATEST)
-# from S3 onto each EC2 instance via SSM Run Command, install dependencies, and deploy.
-# Needs env: ARTIFACT_BUCKET. Optional: ROLE (all|ui|api|db, default "all"), RELEASE (default "latest").
+# CodeBuild job (Single Instance branch): pull artifacts (db, api, ui) from S3 onto the
+# SINGLE EC2 instance via SSM Run Command, install dependencies, and deploy step by step.
+# Needs env: ARTIFACT_BUCKET. Optional: ROLE (all|db|api|ui, default "all"), RELEASE (default "latest").
 set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "$REPO_ROOT/config.env"
@@ -13,10 +13,10 @@ DB_PASSWORD=$(aws ssm get-parameter --region "$AWS_REGION" --name "$DB_PASSWORD_
   --with-decryption --query Parameter.Value --output text 2>/dev/null || echo "FdeTaskPass123456")
 export ARTIFACT_BUCKET RELEASE DB_PASSWORD REPO_ROOT
 
-instance_field() {  # role field(InstanceId|PrivateIpAddress|PublicIpAddress)
+single_instance_field() {  # field(InstanceId|PrivateIpAddress|PublicIpAddress)
   aws ec2 describe-instances \
-    --filters "Name=tag:App,Values=$APP_NAME" "Name=tag:Role,Values=$1" Name=instance-state-name,Values=running \
-    --query "Reservations[0].Instances[0].$2" --output text
+    --filters "Name=tag:App,Values=$APP_NAME" "Name=tag:Role,Values=single" Name=instance-state-name,Values=running \
+    --query "Reservations[0].Instances[0].$1" --output text
 }
 
 resolve_version() {  # role -> release version string
@@ -32,16 +32,17 @@ resolve_version() {  # role -> release version string
   echo "$v"
 }
 
-run_on() {  # role "ENV=val ENV2=val2"
-  local role=$1 envs=$2 id v params cmd_id status
+SINGLE_ID=$(single_instance_field InstanceId)
+[ "$SINGLE_ID" = "None" ] && { echo "No running single instance found. Run scripts/provision.sh first."; exit 1; }
+PUBLIC_IP=$(single_instance_field PublicIpAddress)
+
+run_on_single() {  # role "ENV=val ENV2=val2"
+  local role=$1 envs=$2 id="$SINGLE_ID" v params cmd_id status
   local tar_url="" sum_url="" zip_url=""
-  id=$(instance_field "$role" InstanceId)
-  [ "$id" = "None" ] && { echo "No running '$role' instance. Run the provision step first."; exit 1; }
   v=$(resolve_version "$role")
-  echo "== Deploying $role (version: $v) to instance $id =="
+  echo "== Deploying $role (version: $v) to single instance $id ($PUBLIC_IP) =="
 
   # Resolve artifact in S3 and generate presigned URLs using CodeBuild's IAM permissions
-  # (avoids 403 Forbidden if the EC2 instance profile lacks s3:GetObject on this bucket).
   if [ "$v" != "latest" ] && aws s3 ls "s3://$ARTIFACT_BUCKET/releases/$v/${role}.tar.gz" --region "$AWS_REGION" >/dev/null 2>&1; then
     echo "Resolved S3 artifact: s3://$ARTIFACT_BUCKET/releases/$v/${role}.tar.gz"
     tar_url=$(aws s3 presign "s3://$ARTIFACT_BUCKET/releases/$v/${role}.tar.gz" --region "$AWS_REGION" --expires-in 3600)
@@ -67,7 +68,7 @@ repo_root = pathlib.Path(os.environ["REPO_ROOT"])
 tar_url = os.environ.get("TAR_URL", "")
 sum_url = os.environ.get("SUM_URL", "")
 zip_url = os.environ.get("ZIP_URL", "")
-d = "/tmp/fde-release"
+d = f"/tmp/fde-release-{role}"
 
 common_b64 = base64.b64encode((repo_root / "deploy" / "common.sh").read_bytes()).decode()
 role_b64 = base64.b64encode((repo_root / "deploy" / f"{role}.sh").read_bytes()).decode()
@@ -97,7 +98,6 @@ elif tar_url:
 cmds += [
   f"if [ -f {d}/SHA256SUMS ] && [ -f {d}/{role}.tar.gz ]; then cd {d} && grep ' {role}.tar.gz$' SHA256SUMS | sha256sum -c -; fi",
   f"if [ -f {d}/{role}.tar.gz ]; then tar -xzf {d}/{role}.tar.gz -C {d}; fi",
-  # Always use the latest deploy/common.sh and deploy/<role>.sh from the repo checkout
   f"echo '{common_b64}' | base64 -d > {d}/deploy/common.sh",
   f"echo '{role_b64}' | base64 -d > {d}/deploy/{role}.sh",
   f"chmod +x {d}/deploy/common.sh {d}/deploy/{role}.sh",
@@ -108,7 +108,7 @@ print(json.dumps({"executionTimeout": ["1800"], "commands": cmds}))
 PY
 )
   cmd_id=$(aws ssm send-command --instance-ids "$id" --document-name AWS-RunShellScript \
-    --comment "$APP_NAME $role $v" --parameters "$params" \
+    --comment "$APP_NAME single:$role $v" --parameters "$params" \
     --query Command.CommandId --output text)
 
   for i in $(seq 1 180); do
@@ -116,41 +116,36 @@ PY
       --query Status --output text 2>/dev/null || echo Pending)
     case $status in Pending|InProgress|Delayed) sleep 10 ;; *) break ;; esac
   done
-  echo "--- SSM StandardOutput ---"
+  echo "--- SSM StandardOutput ($role) ---"
   aws ssm get-command-invocation --command-id "$cmd_id" --instance-id "$id" \
     --query 'StandardOutputContent' --output text
-  echo "--- SSM StandardError ---"
+  echo "--- SSM StandardError ($role) ---"
   aws ssm get-command-invocation --command-id "$cmd_id" --instance-id "$id" \
     --query 'StandardErrorContent' --output text
   [ "$status" = "Success" ] || { echo "$role deploy FAILED ($status)"; exit 1; }
 }
 
-DB_IP=$(instance_field db PrivateIpAddress)
-API_IP=$(instance_field api PrivateIpAddress)
-UI_PUBLIC_IP=$(instance_field ui PublicIpAddress)
-
+# On a single instance, DB and API both run on 127.0.0.1
 if [ "$TARGET_ROLE" = "all" ] || [ "$TARGET_ROLE" = "db" ]; then
-  run_on db ""
+  run_on_single db ""
 fi
 if [ "$TARGET_ROLE" = "all" ] || [ "$TARGET_ROLE" = "api" ]; then
-  if [ "$TARGET_ROLE" = "api" ] && [ "$DB_IP" != "None" ]; then
-    echo "== Ensuring DB ($DB_IP) is configured and listening on 0.0.0.0:3306 before starting API =="
-    run_on db ""
+  if [ "$TARGET_ROLE" = "api" ]; then
+    echo "== Ensuring local MySQL DB (127.0.0.1:3306) is configured before starting API =="
+    run_on_single db ""
   fi
-  run_on api "DB_HOST=$DB_IP"
+  run_on_single api "DB_HOST=127.0.0.1"
 fi
 if [ "$TARGET_ROLE" = "all" ] || [ "$TARGET_ROLE" = "ui" ]; then
-  run_on ui "API_HOST=$API_IP"
+  run_on_single ui "API_HOST=127.0.0.1"
 fi
 
 if [ "$TARGET_ROLE" = "all" ] || [ "$TARGET_ROLE" = "ui" ]; then
-  echo "== Smoke test via http://$UI_PUBLIC_IP =="
+  echo "== Smoke test via http://$PUBLIC_IP =="
   for i in $(seq 1 12); do
-    if curl -fsS -o /dev/null "http://$UI_PUBLIC_IP/"; then
-      echo "UI OK -> http://$UI_PUBLIC_IP/"
-      if [ "$API_IP" != "None" ]; then
-        curl -fsS "http://$UI_PUBLIC_IP/api/health" && echo && echo "API OK -> http://$UI_PUBLIC_IP/docs" || true
-      fi
+    if curl -fsS -o /dev/null "http://$PUBLIC_IP/"; then
+      echo "UI OK -> http://$PUBLIC_IP/"
+      curl -fsS "http://$PUBLIC_IP/api/health" && echo && echo "API OK -> http://$PUBLIC_IP/docs" || true
       exit 0
     fi
     sleep 5
