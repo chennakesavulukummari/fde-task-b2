@@ -1,6 +1,6 @@
 -- Schema for the FDE Task Tracker. Safe to run on every deploy.
--- The application user is created by deploy/db.sh with the password
--- from SSM Parameter Store, so no secret lives in this file.
+-- Runtime credentials are injected by the deployment environment; no secret is
+-- stored in this schema file.
 
 CREATE DATABASE IF NOT EXISTS fde_tasks
   CHARACTER SET utf8mb4

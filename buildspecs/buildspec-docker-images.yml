@@ -1,0 +1,21 @@
+version: 0.2
+
+env:
+  shell: bash
+  variables:
+    APP_NAME: "fde-task-app"
+    ARTIFACT_BUCKET: "fde-artifacts"
+    AWS_REGION: "ap-south-2"
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 20
+    commands:
+      - docker --version
+      - docker compose version
+      - aws --version
+      - node --version
+  build:
+    commands:
+      - bash scripts/build-docker-images.sh

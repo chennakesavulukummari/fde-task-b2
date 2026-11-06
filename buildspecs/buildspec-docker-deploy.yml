@@ -1,0 +1,23 @@
+version: 0.2
+
+env:
+  shell: bash
+  variables:
+    APP_NAME: "fde-task-app"
+    ARTIFACT_BUCKET: "fde-artifacts"
+    AWS_REGION: "ap-south-2"
+    RELEASE: "latest"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.12
+    commands:
+      - aws --version
+      - python3 --version
+  pre_build:
+    commands:
+      - bash scripts/provision-docker.sh
+  build:
+    commands:
+      - bash scripts/deploy-docker-images.sh

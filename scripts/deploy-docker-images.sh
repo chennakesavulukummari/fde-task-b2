@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+source "$(dirname "$0")/../config.env"
+: "${ARTIFACT_BUCKET:?ARTIFACT_BUCKET required}"
+
+RELEASE="${RELEASE:-latest}"
+[[ "$RELEASE" =~ ^[A-Za-z0-9._-]+$ ]] || {
+  echo "Invalid release version: $RELEASE" >&2
+  exit 1
+}
+if [ "$RELEASE" = "latest" ]; then
+  RELEASE="$(aws s3 cp "s3://${ARTIFACT_BUCKET}/releases/docker-LATEST" - \
+    --region "$AWS_REGION" | tr -d '[:space:]')"
+fi
+[ -n "$RELEASE" ] || { echo "Could not resolve Docker release" >&2; exit 1; }
+
+INSTANCE_ID="$(aws ec2 describe-instances --region "$AWS_REGION" \
+  --filters "Name=tag:App,Values=$APP_NAME" Name=tag:Role,Values=container \
+    Name=instance-state-name,Values=running \
+  --query 'Reservations[0].Instances[0].InstanceId' --output text)"
+[ "$INSTANCE_ID" != "None" ] || {
+  echo "No running container instance found; provisioning failed or has not run" >&2
+  exit 1
+}
+
+echo "Deploying Docker release $RELEASE to $INSTANCE_ID"
+PARAMS="$(python3 - "$ARTIFACT_BUCKET" "$AWS_REGION" "$RELEASE" \
+  "$DOCKER_DB_PASSWORD_PARAM" "$DOCKER_DB_ROOT_PASSWORD_PARAM" <<'PY'
+import json
+import re
+import sys
+
+bucket, region, release, db_password_param, db_root_password_param = sys.argv[1:]
+if not re.fullmatch(r"[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]", bucket):
+    raise SystemExit("Invalid S3 bucket name")
+if not re.fullmatch(r"[a-z0-9-]+", region):
+    raise SystemExit("Invalid AWS region")
+if not re.fullmatch(r"[A-Za-z0-9._-]+", release):
+    raise SystemExit("Invalid release version")
+for name in (db_password_param, db_root_password_param):
+    if not re.fullmatch(r"/?[A-Za-z0-9_.\-/]+", name):
+        raise SystemExit("Invalid SSM parameter name")
+
+prefix = f"s3://{bucket}/releases/docker/{release}"
+commands = [
+    "set -eu",
+    "export DEBIAN_FRONTEND=noninteractive",
+    "if command -v cloud-init >/dev/null 2>&1; then cloud-init status --wait >/dev/null; fi",
+    "if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then apt-get update -y && apt-get install -y docker.io docker-compose-v2 awscli curl && systemctl enable --now docker; fi",
+    "systemctl start docker",
+    "install -d -m 0755 /opt/fde-task-app/db /opt/fde-task-app/releases",
+    f"install -d -m 0755 /opt/fde-task-app/releases/{release}",
+    f"aws s3 cp '{prefix}/images.tar.gz' '/opt/fde-task-app/releases/{release}/images.tar.gz' --region '{region}'",
+    f"aws s3 cp '{prefix}/SHA256SUMS' '/opt/fde-task-app/releases/{release}/SHA256SUMS' --region '{region}'",
+    f"cd '/opt/fde-task-app/releases/{release}' && sha256sum -c SHA256SUMS",
+    f"aws s3 cp '{prefix}/compose.yaml' '/opt/fde-task-app/releases/{release}/compose.yaml' --region '{region}'",
+    f"aws s3 cp '{prefix}/init.sql' '/opt/fde-task-app/releases/{release}/init.sql' --region '{region}'",
+    f"docker load --input '/opt/fde-task-app/releases/{release}/images.tar.gz'",
+    f"install -m 0644 '/opt/fde-task-app/releases/{release}/compose.yaml' /opt/fde-task-app/compose.yaml",
+    f"install -m 0644 '/opt/fde-task-app/releases/{release}/init.sql' /opt/fde-task-app/db/init.sql",
+    f"DB_PASSWORD=\"$(aws ssm get-parameter --name '{db_password_param}' --with-decryption --region '{region}' --query Parameter.Value --output text)\"",
+    f"DB_ROOT_PASSWORD=\"$(aws ssm get-parameter --name '{db_root_password_param}' --with-decryption --region '{region}' --query Parameter.Value --output text)\"",
+    "for secret in \"$DB_PASSWORD\" \"$DB_ROOT_PASSWORD\"; do case \"$secret\" in ''|*[!A-Za-z0-9._~-]*) echo 'Database credentials must use only letters, digits, dot, underscore, tilde, or hyphen' >&2; exit 1 ;; esac; if [ \"${#secret}\" -lt 16 ] || [ \"${#secret}\" -gt 128 ]; then echo 'Database credentials must be between 16 and 128 characters' >&2; exit 1; fi; done",
+    "umask 077",
+    f"printf 'IMAGE_TAG=%s\\nHTTP_PORT=80\\nDB_PASSWORD=%s\\nDB_ROOT_PASSWORD=%s\\n' '{release}' \"$DB_PASSWORD\" \"$DB_ROOT_PASSWORD\" > /opt/fde-task-app/.env",
+    "unset DB_PASSWORD DB_ROOT_PASSWORD",
+    "docker compose --project-name fde-task-app --file /opt/fde-task-app/compose.yaml --env-file /opt/fde-task-app/.env up --detach --remove-orphans",
+    "for attempt in $(seq 1 60); do if curl --fail --silent http://127.0.0.1/api/health >/dev/null; then break; fi; if [ \"$attempt\" -eq 60 ]; then docker compose --project-name fde-task-app --file /opt/fde-task-app/compose.yaml --env-file /opt/fde-task-app/.env ps; exit 1; fi; sleep 2; done",
+    "curl --fail --silent http://127.0.0.1/ >/dev/null",
+    "curl --fail --silent http://127.0.0.1/api/health",
+]
+print(json.dumps({"executionTimeout": ["3600"], "commands": ["\n".join(commands)]}))
+PY
+)"
+
+COMMAND_ID="$(aws ssm send-command --region "$AWS_REGION" \
+  --instance-ids "$INSTANCE_ID" --document-name AWS-RunShellScript \
+  --comment "$APP_NAME Docker release $RELEASE" \
+  --parameters "$PARAMS" --query Command.CommandId --output text)"
+
+for attempt in $(seq 1 180); do
+  STATUS="$(aws ssm get-command-invocation --region "$AWS_REGION" \
+    --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
+    --query Status --output text 2>/dev/null || echo Pending)"
+  case "$STATUS" in
+    Pending|InProgress|Delayed) sleep 10 ;;
+    *) break ;;
+  esac
+done
+
+aws ssm get-command-invocation --region "$AWS_REGION" \
+  --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
+  --query StandardOutputContent --output text
+aws ssm get-command-invocation --region "$AWS_REGION" \
+  --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
+  --query StandardErrorContent --output text >&2
+[ "$STATUS" = "Success" ] || {
+  echo "Docker deployment failed with SSM status $STATUS" >&2
+  exit 1
+}
+
+PUBLIC_IP="$(aws ec2 describe-instances --region "$AWS_REGION" --instance-ids "$INSTANCE_ID" \
+  --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)"
+echo "Docker release $RELEASE is live at http://$PUBLIC_IP/"
