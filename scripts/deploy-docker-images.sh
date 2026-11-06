@@ -27,6 +27,7 @@ INSTANCE_ID="$(aws ec2 describe-instances --region "$AWS_REGION" \
 echo "Deploying Docker release $RELEASE to $INSTANCE_ID"
 PARAMS="$(python3 - "$ARTIFACT_BUCKET" "$AWS_REGION" "$RELEASE" \
   "$DOCKER_DB_PASSWORD_PARAM" "$DOCKER_DB_ROOT_PASSWORD_PARAM" <<'PY'
+import base64
 import json
 import re
 import sys
@@ -88,7 +89,10 @@ commands = [
     "curl --fail --silent http://127.0.0.1/api/health",
     "STEP=complete",
 ]
-print(json.dumps({"executionTimeout": ["3600"], "commands": ["\n".join(commands)]}))
+script = "\n".join(commands)
+encoded_script = base64.b64encode(script.encode()).decode()
+ssm_command = f"printf '%s' '{encoded_script}' | base64 --decode | bash"
+print(json.dumps({"executionTimeout": ["3600"], "commands": [ssm_command]}))
 PY
 )"
 
