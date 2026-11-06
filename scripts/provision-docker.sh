@@ -115,7 +115,7 @@ echo "== Provisioning separate Docker EC2 instance =="
 INSTANCE_ID="$(aws ec2 describe-instances --region "$AWS_REGION" \
   --filters "Name=tag:App,Values=$APP_NAME" Name=tag:Role,Values=container \
     Name=instance-state-name,Values=pending,running,stopping,stopped \
-  --query 'Reservations[].Instances[0].[InstanceId,State.Name]' --output text | head -1)"
+  --query 'Reservations[].Instances[].InstanceId' --output text | head -1)"
 if [ -n "$INSTANCE_ID" ] && [ "$INSTANCE_ID" != "None" ]; then
   INSTANCE_STATE="$(aws ec2 describe-instances --region "$AWS_REGION" --instance-ids "$INSTANCE_ID" \
     --query 'Reservations[0].Instances[0].State.Name' --output text)"
