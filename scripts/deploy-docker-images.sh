@@ -68,7 +68,7 @@ commands = [
     f"cd '/opt/fde-task-app/releases/{release}' && sha256sum -c SHA256SUMS",
     "STEP='downloading Compose and database schema'",
     f"aws s3 cp '{prefix}/compose.yaml' '/opt/fde-task-app/releases/{release}/compose.yaml' --region '{region}'",
-    f"aws s3 cp '{prefix}/init.sql' '/opt/fde-task-app/releases/{release}/init.sql' --region '{region}'",
+    f"aws s3 cp '{prefix}/db/init.sql' '/opt/fde-task-app/releases/{release}/init.sql' --region '{region}'",
     "STEP='loading Docker images'",
     f"docker load --input '/opt/fde-task-app/releases/{release}/images.tar.gz'",
     "STEP='installing Compose and database schema'",
