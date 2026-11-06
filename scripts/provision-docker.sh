@@ -106,7 +106,7 @@ user_data() {
 set -e
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y docker.io docker-compose-v2 awscli curl
+apt-get install -y docker.io docker-compose-v2 curl unzip ca-certificates
 systemctl enable --now docker
 EOF
 }
