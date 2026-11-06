@@ -45,30 +45,48 @@ for name in (db_password_param, db_root_password_param):
 prefix = f"s3://{bucket}/releases/docker/{release}"
 commands = [
     "set -eu",
+    "STEP=initialization",
+    "trap 'rc=$?; if [ \"$rc\" -ne 0 ]; then echo \"Deployment failed during: ${STEP:-unknown} (exit $rc)\" >&2; if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 && [ -f /opt/fde-task-app/compose.yaml ]; then docker compose --project-name fde-task-app --file /opt/fde-task-app/compose.yaml --env-file /opt/fde-task-app/.env ps -a >&2 || true; docker compose --project-name fde-task-app --file /opt/fde-task-app/compose.yaml --env-file /opt/fde-task-app/.env logs --tail=80 db api ui >&2 || true; fi; fi' EXIT",
     "export DEBIAN_FRONTEND=noninteractive",
+    "STEP=waiting for cloud-init",
     "if command -v cloud-init >/dev/null 2>&1; then cloud-init status --wait >/dev/null; fi",
+    "STEP=installing Docker and AWS CLI",
     "if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then apt-get update -y && apt-get install -y docker.io docker-compose-v2 awscli curl && systemctl enable --now docker; fi",
     "systemctl start docker",
+    "STEP=preparing release directory",
     "install -d -m 0755 /opt/fde-task-app/db /opt/fde-task-app/releases",
     f"install -d -m 0755 /opt/fde-task-app/releases/{release}",
+    "STEP=downloading image archive from S3",
     f"aws s3 cp '{prefix}/images.tar.gz' '/opt/fde-task-app/releases/{release}/images.tar.gz' --region '{region}'",
+    "STEP=downloading archive checksum",
     f"aws s3 cp '{prefix}/SHA256SUMS' '/opt/fde-task-app/releases/{release}/SHA256SUMS' --region '{region}'",
+    "STEP=verifying image archive",
     f"cd '/opt/fde-task-app/releases/{release}' && sha256sum -c SHA256SUMS",
+    "STEP=downloading Compose and database schema",
     f"aws s3 cp '{prefix}/compose.yaml' '/opt/fde-task-app/releases/{release}/compose.yaml' --region '{region}'",
     f"aws s3 cp '{prefix}/init.sql' '/opt/fde-task-app/releases/{release}/init.sql' --region '{region}'",
+    "STEP=loading Docker images",
     f"docker load --input '/opt/fde-task-app/releases/{release}/images.tar.gz'",
+    "STEP=installing Compose and database schema",
     f"install -m 0644 '/opt/fde-task-app/releases/{release}/compose.yaml' /opt/fde-task-app/compose.yaml",
     f"install -m 0644 '/opt/fde-task-app/releases/{release}/init.sql' /opt/fde-task-app/db/init.sql",
+    "STEP=reading database credentials from SSM",
     f"DB_PASSWORD=\"$(aws ssm get-parameter --name '{db_password_param}' --with-decryption --region '{region}' --query Parameter.Value --output text)\"",
     f"DB_ROOT_PASSWORD=\"$(aws ssm get-parameter --name '{db_root_password_param}' --with-decryption --region '{region}' --query Parameter.Value --output text)\"",
+    "STEP=validating database credentials",
     "for secret in \"$DB_PASSWORD\" \"$DB_ROOT_PASSWORD\"; do case \"$secret\" in ''|*[!A-Za-z0-9._~-]*) echo 'Database credentials must use only letters, digits, dot, underscore, tilde, or hyphen' >&2; exit 1 ;; esac; if [ \"${#secret}\" -lt 16 ] || [ \"${#secret}\" -gt 128 ]; then echo 'Database credentials must be between 16 and 128 characters' >&2; exit 1; fi; done",
+    "STEP=writing Compose environment",
     "umask 077",
     f"printf 'IMAGE_TAG=%s\\nHTTP_PORT=80\\nDB_PASSWORD=%s\\nDB_ROOT_PASSWORD=%s\\n' '{release}' \"$DB_PASSWORD\" \"$DB_ROOT_PASSWORD\" > /opt/fde-task-app/.env",
     "unset DB_PASSWORD DB_ROOT_PASSWORD",
+    "STEP=starting Docker Compose services",
     "docker compose --project-name fde-task-app --file /opt/fde-task-app/compose.yaml --env-file /opt/fde-task-app/.env up --detach --remove-orphans",
+    "STEP=waiting for API health check",
     "for attempt in $(seq 1 60); do if curl --fail --silent http://127.0.0.1/api/health >/dev/null; then break; fi; if [ \"$attempt\" -eq 60 ]; then docker compose --project-name fde-task-app --file /opt/fde-task-app/compose.yaml --env-file /opt/fde-task-app/.env ps; exit 1; fi; sleep 2; done",
+    "STEP=checking UI and API endpoints",
     "curl --fail --silent http://127.0.0.1/ >/dev/null",
     "curl --fail --silent http://127.0.0.1/api/health",
+    "STEP=complete",
 ]
 print(json.dumps({"executionTimeout": ["3600"], "commands": ["\n".join(commands)]}))
 PY
@@ -95,6 +113,10 @@ aws ssm get-command-invocation --region "$AWS_REGION" \
 aws ssm get-command-invocation --region "$AWS_REGION" \
   --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
   --query StandardErrorContent --output text >&2
+aws ssm get-command-invocation --region "$AWS_REGION" \
+  --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
+  --query '{Status:Status,StatusDetails:StatusDetails,ResponseCode:ResponseCode,ExecutionElapsedTime:ExecutionElapsedTime}' \
+  --output table
 [ "$STATUS" = "Success" ] || {
   echo "Docker deployment failed with SSM status $STATUS" >&2
   exit 1
