@@ -64,13 +64,21 @@ sudo docker compose down
 
 `docker compose build` builds the UI and API images; MySQL is pulled from the official `mysql:8.0` image when the stack starts. `docker compose up --build -d` builds the application images and starts the whole stack in one command. `docker compose down` preserves the database volume. `docker compose down --volumes` permanently deletes the persisted task data. Back up the volume before replacing or terminating an EC2 instance. Keep `.env` private and never commit it.
 
+STEP-0:
+    2  apt update 
+    3  apt install docker.io curl wget unzip tree docker-compose
+    4  docker images
+    5  docker ps
+    6  docker compose images
+    7  docker compose ps
 
 
-DB_ROOT_PASSWORD=CloudBinary@123
-DB_NAME=cloudbinary
-DB_USER=cbuser
-DB_PASSWORD=CbUser@123
+    sudo usermod -aG docker ubuntu
+    ls -la /var/run/docker.sock
+    chmod 777 /var/run/docker.sock
+    
 
+Clone : git clone https://github.com/chennakesavulukummari/fde-task-b2.git
 
 
 ubuntu@ip-172-31-8-51:~/fde-task-b2$ pwd
@@ -78,8 +86,19 @@ ubuntu@ip-172-31-8-51:~/fde-task-b2$ pwd
 
 vi .env
 
-ubuntu@ip-172-31-8-51:~/fde-task-b2$  sudo docker compose up --build -d
+DB_ROOT_PASSWORD=CloudBinary@123
+DB_NAME=cloudbinary
+DB_USER=cbuser
+DB_PASSWORD=CbUser@123
+
+ubuntu@ip-172-31-8-51:~/fde-task-b2$  docker compose up --build -d
+
 ubuntu@ip-172-31-8-51:~/fde-task-b2$  docker images
+
 ubuntu@ip-172-31-8-51:~/fde-task-b2$  docker ps
+
 ubuntu@ip-172-31-8-51:~/fde-task-b2$  docker compose images
+
 ubuntu@ip-172-31-8-51:~/fde-task-b2$  docker compose ps
+
+
