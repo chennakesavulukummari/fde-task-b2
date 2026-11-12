@@ -2,6 +2,40 @@
 
 The application is a three-service Docker Compose stack: a static web UI served by Nginx, a FastAPI task API, and MySQL. The UI and API images are built from this repository; Compose pulls the official MySQL image. See the [architecture diagrams and component inventory](./.github/modernize/assessment/engines/facts/architecture-diagram.md) for the code-grounded view.
 
+## Mermaid flow
+
+<!-- mermaid-checked: no \n, no em-dash/en-dash, no {} in labels, subgraphs are id["label"], arrows are -->|"label"|, all subgraphs closed by end, ids unique -->
+```mermaid
+flowchart TD
+    Browser["Web browser"]
+    EnvFile["Private .env file"]
+    InitSql["db/init.sql"]
+    Volume[("mysql_data volume")]
+
+    subgraph Host["Ubuntu host"]
+        Compose["Docker Engine and Compose"]
+        subgraph App["Compose private network"]
+            UI["Nginx UI on container port 8080"]
+            API["FastAPI API on container port 8000"]
+            DB[("MySQL 8.0 on port 3306")]
+        end
+    end
+
+    Browser -->|"HTTP to host port 80 by default"| UI
+    UI -->|"returns static UI"| Browser
+    UI -->|"proxies api requests"| API
+    API -->|"SQLAlchemy and PyMySQL"| DB
+    DB -->|"persists data"| Volume
+    InitSql -.->|"initializes a fresh database"| DB
+    EnvFile -.->|"provides database credentials"| API
+    EnvFile -.->|"provides database credentials"| DB
+    Compose -.->|"builds and starts"| UI
+    Compose -.->|"builds and starts"| API
+    Compose -.->|"pulls and starts"| DB
+    DB -.->|"healthy before api starts"| API
+    API -.->|"healthy before ui starts"| UI
+```
+
 ## Lucidchart prompt
 
 Paste this prompt into Lucidchart AI to create an editable architecture diagram:
