@@ -1,0 +1,24 @@
+version: 0.2
+
+env:
+  shell: bash
+  variables:
+    APP_NAME: "fde-task-app"
+    ARTIFACT_BUCKET: "fde-artifacts"
+    AWS_REGION: "ap-south-2"
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 20
+      python: 3.12
+    commands:
+      - docker --version
+      - aws --version
+      - node --version
+      - python3 --version
+  build:
+    commands:
+      - echo "== Building UI, API, and DB Container Images & Packaging K8s Manifests =="
+      - bash scripts/build-k8s-images.sh
+

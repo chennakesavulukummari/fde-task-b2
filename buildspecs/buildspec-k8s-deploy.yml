@@ -1,0 +1,26 @@
+version: 0.2
+
+env:
+  shell: bash
+  variables:
+    APP_NAME: "fde-task-app"
+    ARTIFACT_BUCKET: "fde-artifacts"
+    AWS_REGION: "ap-south-2"
+    RELEASE: "latest"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.12
+    commands:
+      - aws --version
+      - python3 --version
+  pre_build:
+    commands:
+      - echo "== Step 1 - Provisioning 3 EC2 Nodes (1 Control Plane + 2 Workers) & Bootstrapping Kubernetes =="
+      - bash scripts/provision-k8s.sh
+  build:
+    commands:
+      - echo "== Step 2 - Creating 3 Namespaces (db, api, ui) & Deploying 3 Containers to Kubernetes =="
+      - bash scripts/deploy-k8s.sh
+

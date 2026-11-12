@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: db
+  namespace: db
+  labels:
+    app: db
+    tier: database
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: db
+  template:
+    metadata:
+      labels:
+        app: db
+        tier: database
+    spec:
+      containers:
+        - name: mysql
+          image: docker.io/library/mysql:8.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3306
+              name: mysql
+          env:
+            - name: MYSQL_DATABASE
+              value: "fde_tasks"
+            - name: MYSQL_USER
+              value: "fde_app"
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: db-password
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: db-root-password
+          volumeMounts:
+            - name: mysql-data
+              mountPath: /var/lib/mysql
+            - name: db-init-sql
+              mountPath: /docker-entrypoint-initdb.d/001-init.sql
+              subPath: init.sql
+              readOnly: true
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - 'mysqladmin ping -h 127.0.0.1 -uroot --password="${MYSQL_ROOT_PASSWORD}" --silent'
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - 'mysqladmin ping -h 127.0.0.1 -uroot --password="${MYSQL_ROOT_PASSWORD}" --silent'
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+      volumes:
+        - name: mysql-data
+          emptyDir: {}
+        - name: db-init-sql
+          configMap:
+            name: db-init-sql
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+  namespace: db
+  labels:
+    app: db
+spec:
+  type: ClusterIP
+  selector:
+    app: db
+  ports:
+    - name: mysql
+      port: 3306
+      targetPort: 3306
+
