@@ -1,0 +1,36 @@
+version: 0.2
+
+env:
+  variables:
+    TF_VERSION: "1.9.8"
+    TF_IN_AUTOMATION: "true"
+    TF_INPUT: "false"
+
+phases:
+  install:
+    commands:
+      - echo "Installing Terraform v${TF_VERSION}..."
+      - curl -sSL "https://releases.hashicorp.com/terraform/${TF_VERSION}/terraform_${TF_VERSION}_linux_amd64.zip" -o /tmp/terraform.zip
+      - unzip -q /tmp/terraform.zip -d /usr/local/bin/
+      - rm -f /tmp/terraform.zip
+      - terraform version
+
+  pre_build:
+    commands:
+      - echo "Validating AWS identity and Terraform formatting..."
+      - aws sts get-caller-identity
+      - terraform fmt -check -recursive || true
+      - terraform init
+
+  build:
+    commands:
+      - echo "Validating and planning EC2 infrastructure..."
+      - terraform validate
+      - terraform plan -out=tfplan
+      - echo "Applying EC2 infrastructure..."
+      - terraform apply -auto-approve tfplan
+
+  post_build:
+    commands:
+      - echo "Terraform outputs:"
+      - terraform output || true
