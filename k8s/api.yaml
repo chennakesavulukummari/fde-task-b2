@@ -1,4 +1,13 @@
 apiVersion: v1
+kind: Secret
+metadata:
+  name: db-credentials
+  namespace: api
+type: Opaque
+stringData:
+  db-password: "FdeTaskPass123456"
+---
+apiVersion: v1
 kind: Service
 metadata:
   name: db
@@ -28,7 +37,7 @@ spec:
     spec:
       containers:
         - name: api
-          image: docker.io/library/fde-task-api:__IMAGE_TAG__
+          image: docker.io/library/fde-task-api:v1
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
@@ -43,7 +52,7 @@ spec:
             - name: DB_USER
               value: "fde_app"
             - name: APP_VERSION
-              value: "__IMAGE_TAG__"
+              value: "v1"
             - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -79,4 +88,3 @@ spec:
     - name: http
       port: 8000
       targetPort: 8000
-

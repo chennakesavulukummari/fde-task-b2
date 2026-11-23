@@ -103,32 +103,24 @@ echo "--- Creating 3 Namespaces: db, api, ui ---"
 kubectl apply -f "\$RELEASE_DIR/k8s/namespaces.yaml"
 kubectl get namespaces db api ui
 
-echo "--- Configuring Secrets & Schema ConfigMap in db and api namespaces ---"
+echo "--- Deploying DB container in namespace 'db' ---"
+kubectl apply -f "\$RELEASE_DIR/k8s/db.yaml"
 kubectl -n db create secret generic db-credentials \
   --from-literal=db-password="\$DB_PASSWORD" \
   --from-literal=db-root-password="\$DB_ROOT_PASSWORD" \
   --dry-run=client -o yaml | kubectl apply -f -
-
-kubectl -n db create configmap db-init-sql \
-  --from-file=init.sql="\$RELEASE_DIR/db/init.sql" \
-  --dry-run=client -o yaml | kubectl apply -f -
-
-kubectl -n api create secret generic db-credentials \
-  --from-literal=db-password="\$DB_PASSWORD" \
-  --dry-run=client -o yaml | kubectl apply -f -
-
-unset DB_PASSWORD DB_ROOT_PASSWORD
-
-echo "--- Deploying DB container in namespace 'db' ---"
-kubectl apply -f "\$RELEASE_DIR/k8s/db.yaml"
 kubectl -n db rollout status deployment/db --timeout=180s
 
 echo "--- Deploying API container in namespace 'api' ---"
-sed "s/__IMAGE_TAG__/${RELEASE}/g" "\$RELEASE_DIR/k8s/api.yaml" | kubectl apply -f -
+sed "s/fde-task-api:v1/fde-task-api:${RELEASE}/g" "\$RELEASE_DIR/k8s/api.yaml" | kubectl apply -f -
+kubectl -n api create secret generic db-credentials \
+  --from-literal=db-password="\$DB_PASSWORD" \
+  --dry-run=client -o yaml | kubectl apply -f -
+unset DB_PASSWORD DB_ROOT_PASSWORD
 kubectl -n api rollout status deployment/api --timeout=180s
 
 echo "--- Deploying UI container in namespace 'ui' ---"
-sed "s/__IMAGE_TAG__/${RELEASE}/g" "\$RELEASE_DIR/k8s/ui.yaml" | kubectl apply -f -
+sed "s/fde-task-ui:v1/fde-task-ui:${RELEASE}/g" "\$RELEASE_DIR/k8s/ui.yaml" | kubectl apply -f -
 kubectl -n ui rollout status deployment/ui --timeout=180s
 
 echo "=== Kubernetes Nodes ==="

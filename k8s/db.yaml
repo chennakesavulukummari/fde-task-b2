@@ -1,3 +1,36 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: db-credentials
+  namespace: db
+type: Opaque
+stringData:
+  db-password: "FdeTaskPass123456"
+  db-root-password: "FdeRootPass123456"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: db-init-sql
+  namespace: db
+data:
+  init.sql: |
+    CREATE DATABASE IF NOT EXISTS fde_tasks
+      CHARACTER SET utf8mb4
+      COLLATE utf8mb4_unicode_ci;
+
+    USE fde_tasks;
+
+    CREATE TABLE IF NOT EXISTS tasks (
+      id          INT          NOT NULL AUTO_INCREMENT,
+      title       VARCHAR(200) NOT NULL,
+      description TEXT         NOT NULL,
+      completed   BOOLEAN      NOT NULL DEFAULT FALSE,
+      created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY ix_tasks_id (id)
+    ) ENGINE=InnoDB;
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -88,4 +121,3 @@ spec:
     - name: mysql
       port: 3306
       targetPort: 3306
-

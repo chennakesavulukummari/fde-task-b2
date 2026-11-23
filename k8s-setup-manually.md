@@ -171,50 +171,36 @@ sudo ctr -n k8s.io images ls -q | grep -E 'fde-task|mysql'
 
 ---
 
-## PART 5: Create 3 Namespaces (`db`, `api`, `ui`) & Deploy 3 Containers (Run on `k8s-cp`)
+## PART 5: Create 3 Namespaces (`db`, `api`, `ui`) & Deploy 3 Containers Using YAML Files (Run on `k8s-cp`)
 
 ```bash
 cd ~/fde-task-b2
 
-# 1. Create the 3 namespaces (db, api, ui)
+# Step 1: Create the 3 namespaces (db, api, ui)
 kubectl apply -f k8s/namespaces.yaml
 kubectl get namespaces
 
-# 2. Create Secrets & DB Schema ConfigMap
-DB_PASS="FdeTaskPass123456"
-DB_ROOT_PASS="FdeRootPass123456"
-
-kubectl -n db create secret generic db-credentials \
-  --from-literal=db-password="$DB_PASS" \
-  --from-literal=db-root-password="$DB_ROOT_PASS" \
-  --dry-run=client -o yaml | kubectl apply -f -
-
-kubectl -n db create configmap db-init-sql \
-  --from-file=init.sql=db/init.sql \
-  --dry-run=client -o yaml | kubectl apply -f -
-
-kubectl -n api create secret generic db-credentials \
-  --from-literal=db-password="$DB_PASS" \
-  --dry-run=client -o yaml | kubectl apply -f -
-
-# 3. Deploy DB Container in namespace 'db'
+# Step 2: Deploy DB Container, Secret & ConfigMap in namespace 'db'
 kubectl apply -f k8s/db.yaml
 kubectl -n db rollout status deployment/db --timeout=180s
-
-# 4. Deploy API Container in namespace 'api'
-sed 's/__IMAGE_TAG__/v1/g' k8s/api.yaml | kubectl apply -f -
-kubectl -n api rollout status deployment/api --timeout=180s
-
-# 5. Deploy UI Container in namespace 'ui'
-sed 's/__IMAGE_TAG__/v1/g' k8s/ui.yaml | kubectl apply -f -
-kubectl -n ui rollout status deployment/ui --timeout=180s
-
-# 6. Verify all Pods & Services across the 3 namespaces
 kubectl get pods,svc -n db -o wide
+
+# Step 3: Deploy API Container, Secret & Service in namespace 'api'
+kubectl apply -f k8s/api.yaml
+kubectl -n api rollout status deployment/api --timeout=180s
 kubectl get pods,svc -n api -o wide
+
+# Step 4: Deploy UI Container, ConfigMap & NodePort Service in namespace 'ui'
+kubectl apply -f k8s/ui.yaml
+kubectl -n ui rollout status deployment/ui --timeout=180s
 kubectl get pods,svc -n ui -o wide
 
-# 7. Test UI and API via NodePort 30080
+# Step 5: Verify all resources across the 3 namespaces
+kubectl get all -n db
+kubectl get all -n api
+kubectl get all -n ui
+
+# Step 6: Test UI and API via NodePort 30080
 curl -i http://127.0.0.1:30080/
 curl -i http://127.0.0.1:30080/api/health
 ```
