@@ -1,3 +1,5 @@
+iac/.terraform*
+iac/.terraform.lock.hcl
 # Angular specific
 /dist/
 /out-tsc/
